@@ -1,14 +1,12 @@
 package workerbase
 
-//go:generate go-mockgen github.com/go-nacelle/config -i Config -o mock_config_test.go -f
-
 import (
 	"net"
 	"testing"
 
 	"github.com/aphistic/sweet"
 	junit "github.com/aphistic/sweet-junit"
-	"github.com/go-nacelle/config/mocks"
+	"github.com/go-nacelle/nacelle/mocks"
 	"github.com/go-nacelle/nacelle"
 	. "github.com/onsi/gomega"
 )
