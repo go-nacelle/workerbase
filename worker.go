@@ -11,7 +11,7 @@ import (
 
 type (
 	Worker struct {
-		Services     nacelle.ServiceContainer `service:"container"`
+		Services     nacelle.ServiceContainer `service:"services"`
 		Health       nacelle.Health           `service:"health"`
 		tagModifiers []nacelle.TagModifier
 		spec         WorkerSpec
