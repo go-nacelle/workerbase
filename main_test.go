@@ -6,8 +6,8 @@ import (
 
 	"github.com/aphistic/sweet"
 	junit "github.com/aphistic/sweet-junit"
-	"github.com/go-nacelle/nacelle/mocks"
 	"github.com/go-nacelle/nacelle"
+	"github.com/go-nacelle/nacelle/mocks"
 	. "github.com/onsi/gomega"
 )
 
