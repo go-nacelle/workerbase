@@ -3,7 +3,7 @@ package workerbase
 import "time"
 
 type Config struct {
-	RawWorkerTickInterval int `env:"worker_tick_interval" file:"worker_tick_interval" mask:"true" default:"0"`
+	RawWorkerTickInterval int `env:"worker_tick_interval" file:"worker_tick_interval" default:"0"`
 
 	WorkerTickInterval time.Duration
 }
