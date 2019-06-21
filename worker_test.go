@@ -139,8 +139,8 @@ type badInjectWorkerSpec struct {
 	ServiceA *A `service:"A"`
 }
 
-func (s *badInjectWorkerSpec) Init(c nacelle.Config) error { return nil }
-func (s *badInjectWorkerSpec) Tick(ctx context.Context) error         { return nil }
+func (s *badInjectWorkerSpec) Init(c nacelle.Config) error    { return nil }
+func (s *badInjectWorkerSpec) Tick(ctx context.Context) error { return nil }
 
 func makeBadContainer() nacelle.ServiceContainer {
 	container := nacelle.NewServiceContainer()
