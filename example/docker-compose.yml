@@ -1,0 +1,9 @@
+version: '3.7'
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - WOEID=2451822
+      - WORKER_TICK_INTERVAL=5
