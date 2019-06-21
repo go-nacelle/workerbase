@@ -1,6 +1,7 @@
 package workerbase
 
 import (
+	"context"
 	"sync"
 	"time"
 
@@ -24,7 +25,7 @@ type (
 
 	WorkerSpec interface {
 		Init(nacelle.Config, *Worker) error
-		Tick() error
+		Tick(ctx context.Context) error
 	}
 )
 
@@ -84,20 +85,25 @@ func (w *Worker) Start() error {
 		return err
 	}
 
-loop:
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go func() {
+		<-w.halt
+		cancel()
+	}()
+
 	for {
-		if err := w.spec.Tick(); err != nil {
+		if err := w.spec.Tick(ctx); err != nil {
 			return err
 		}
 
 		select {
 		case <-w.halt:
-			break loop
+			return nil
 		case <-w.clock.After(w.tickInterval):
 		}
 	}
-
-	return nil
 }
 
 func (w *Worker) Stop() (err error) {
