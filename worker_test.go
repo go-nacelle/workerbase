@@ -1,6 +1,7 @@
 package workerbase
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -12,9 +13,13 @@ import (
 
 type WorkerSuite struct{}
 
+var testConfig = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+	"worker_tick_interval": "5",
+}))
+
 func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 	var (
-		spec     = newMockWorkerSpec()
+		spec     = NewMockWorkerSpec()
 		clock    = glock.NewMockClock()
 		worker   = makeWorker(spec, clock)
 		tickChan = make(chan struct{})
@@ -23,12 +28,12 @@ func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 
 	defer close(tickChan)
 
-	spec.tick = func() error {
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
 		tickChan <- struct{}{}
 		return nil
-	}
+	})
 
-	err := worker.Init(makeConfig(&Config{RawWorkerTickInterval: 5}))
+	err := worker.Init(testConfig)
 	Expect(err).To(BeNil())
 
 	go func() {
@@ -54,45 +59,70 @@ func (s *WorkerSuite) TestBadInject(t sweet.T) {
 	worker.Services = makeBadContainer()
 	worker.Health = nacelle.NewHealth()
 
-	err := worker.Init(makeConfig(&Config{RawWorkerTickInterval: 5}))
+	err := worker.Init(testConfig)
 	Expect(err).NotTo(BeNil())
 	Expect(err.Error()).To(ContainSubstring("ServiceA"))
 }
 
 func (s *WorkerSuite) TestInitError(t sweet.T) {
 	var (
-		spec   = newMockWorkerSpec()
+		spec   = NewMockWorkerSpec()
 		worker = makeWorker(spec, glock.NewRealClock())
 	)
 
-	spec.init = func(config nacelle.Config, worker *Worker) error {
-		return fmt.Errorf("utoh")
-	}
+	spec.InitFunc.SetDefaultHook(func(config nacelle.Config, worker *Worker) error {
+		return fmt.Errorf("oops")
+	})
 
-	err := worker.Init(makeConfig(&Config{RawWorkerTickInterval: 5}))
-	Expect(err).To(MatchError("utoh"))
+	err := worker.Init(testConfig)
+	Expect(err).To(MatchError("oops"))
 }
 
 func (s *WorkerSuite) TestTickError(t sweet.T) {
 	var (
-		spec    = newMockWorkerSpec()
+		spec    = NewMockWorkerSpec()
 		clock   = glock.NewMockClock()
 		worker  = makeWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
-	spec.tick = func() error {
-		return fmt.Errorf("utoh")
-	}
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		return fmt.Errorf("oops")
+	})
 
-	err := worker.Init(makeConfig(&Config{RawWorkerTickInterval: 5}))
+	err := worker.Init(testConfig)
 	Expect(err).To(BeNil())
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
-	Eventually(errChan).Should(Receive(MatchError("utoh")))
+	Eventually(errChan).Should(Receive(MatchError("oops")))
+	Expect(worker.IsDone()).To(BeTrue())
+}
+
+func (s *WorkerSuite) TestTickContext(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpec()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		<-ctx.Done()
+		return nil
+	})
+
+	err := worker.Init(testConfig)
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(BeNil()))
 	Expect(worker.IsDone()).To(BeTrue())
 }
 
@@ -104,29 +134,20 @@ func makeWorker(spec WorkerSpec, clock glock.Clock) *Worker {
 }
 
 //
-// Mocks
-
-type mockSpec struct {
-	init func(nacelle.Config, *Worker) error
-	tick func() error
-}
-
-func newMockWorkerSpec() *mockSpec {
-	return &mockSpec{
-		init: func(nacelle.Config, *Worker) error { return nil },
-		tick: func() error { return nil },
-	}
-}
-
-func (s *mockSpec) Init(c nacelle.Config, w *Worker) error { return s.init(c, w) }
-func (s *mockSpec) Tick() error                            { return s.tick() }
-
-//
 // Bad Injection
+
+type A struct{ X int }
+type B struct{ X float64 }
 
 type badInjectWorkerSpec struct {
 	ServiceA *A `service:"A"`
 }
 
 func (s *badInjectWorkerSpec) Init(c nacelle.Config, w *Worker) error { return nil }
-func (s *badInjectWorkerSpec) Tick() error                            { return nil }
+func (s *badInjectWorkerSpec) Tick(ctx context.Context) error         { return nil }
+
+func makeBadContainer() nacelle.ServiceContainer {
+	container := nacelle.NewServiceContainer()
+	container.Set("A", &B{})
+	return container
+}
