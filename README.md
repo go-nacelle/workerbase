@@ -6,7 +6,7 @@ Abstract worker process for nacelle.
 
 ### Usage
 
-The supplied process is an abstract busy-loop whose behavior is determined by a supplied `WorkerSpec` interface. This interface has an `Init` method that receives application config as well as the worker process instance and a `Tick` method where each phase of work should be done. The worker process has methods and `IsDone` and `HaltChan` which can be used within the tick method to determine if long-running work should be abandoned on application shutdown. There is an [example](./example) included in this repository.
+The supplied process is an abstract busy-loop whose behavior is determined by a supplied `WorkerSpec` interface. This interface has an `Init` method that receives application config and a `Tick` method where each phase of work should be done. The tick method is passed a context that will be canceled on shutdown so that any long-running work can be cleanly abandoned. There is an [example](./example) included in this repository.
 
 - **WithTagModifiers** registers the tag modifiers to be used when loading process configuration (see [below](#Configuration)). This can be used to change the default tick interval, or prefix all target environment variables in the case where more than one worker process is registered per application.
 

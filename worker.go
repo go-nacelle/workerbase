@@ -24,7 +24,7 @@ type (
 	}
 
 	WorkerSpec interface {
-		Init(nacelle.Config, *Worker) error
+		Init(nacelle.Config) error
 		Tick(ctx context.Context) error
 	}
 )
@@ -46,19 +46,6 @@ func newWorker(spec WorkerSpec, clock glock.Clock, configs ...ConfigFunc) *Worke
 	}
 }
 
-func (w *Worker) IsDone() bool {
-	select {
-	case <-w.HaltChan():
-		return true
-	default:
-		return false
-	}
-}
-
-func (w *Worker) HaltChan() <-chan struct{} {
-	return w.halt
-}
-
 func (w *Worker) Init(config nacelle.Config) error {
 	if err := w.Health.AddReason(w.healthToken); err != nil {
 		return err
@@ -75,7 +62,7 @@ func (w *Worker) Init(config nacelle.Config) error {
 		return err
 	}
 
-	return w.spec.Init(config, w)
+	return w.spec.Init(config)
 }
 
 func (w *Worker) Start() error {

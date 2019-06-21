@@ -48,9 +48,7 @@ func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 	clock.BlockingAdvance(time.Second * 5)
 	Eventually(tickChan).Should(Receive())
 
-	Expect(worker.IsDone()).To(BeFalse())
 	worker.Stop()
-	Expect(worker.IsDone()).To(BeTrue())
 	Eventually(errChan).Should(Receive(BeNil()))
 }
 
@@ -70,7 +68,7 @@ func (s *WorkerSuite) TestInitError(t sweet.T) {
 		worker = makeWorker(spec, glock.NewRealClock())
 	)
 
-	spec.InitFunc.SetDefaultHook(func(config nacelle.Config, worker *Worker) error {
+	spec.InitFunc.SetDefaultHook(func(config nacelle.Config) error {
 		return fmt.Errorf("oops")
 	})
 
@@ -98,7 +96,6 @@ func (s *WorkerSuite) TestTickError(t sweet.T) {
 	}()
 
 	Eventually(errChan).Should(Receive(MatchError("oops")))
-	Expect(worker.IsDone()).To(BeTrue())
 }
 
 func (s *WorkerSuite) TestTickContext(t sweet.T) {
@@ -123,7 +120,6 @@ func (s *WorkerSuite) TestTickContext(t sweet.T) {
 
 	worker.Stop()
 	Eventually(errChan).Should(Receive(BeNil()))
-	Expect(worker.IsDone()).To(BeTrue())
 }
 
 func makeWorker(spec WorkerSpec, clock glock.Clock) *Worker {
@@ -143,7 +139,7 @@ type badInjectWorkerSpec struct {
 	ServiceA *A `service:"A"`
 }
 
-func (s *badInjectWorkerSpec) Init(c nacelle.Config, w *Worker) error { return nil }
+func (s *badInjectWorkerSpec) Init(c nacelle.Config) error { return nil }
 func (s *badInjectWorkerSpec) Tick(ctx context.Context) error         { return nil }
 
 func makeBadContainer() nacelle.ServiceContainer {
