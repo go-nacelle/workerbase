@@ -7,6 +7,7 @@ import (
 
 	"github.com/aphistic/sweet"
 	"github.com/efritz/glock"
+	. "github.com/efritz/go-mockgen/matchers"
 	"github.com/go-nacelle/nacelle"
 	. "github.com/onsi/gomega"
 )
@@ -19,7 +20,7 @@ var testConfig = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
 
 func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 	var (
-		spec     = NewMockWorkerSpec()
+		spec     = NewMockWorkerSpecFinalizer()
 		clock    = glock.NewMockClock()
 		worker   = makeWorker(spec, clock)
 		tickChan = make(chan struct{})
@@ -64,7 +65,7 @@ func (s *WorkerSuite) TestBadInject(t sweet.T) {
 
 func (s *WorkerSuite) TestInitError(t sweet.T) {
 	var (
-		spec   = NewMockWorkerSpec()
+		spec   = NewMockWorkerSpecFinalizer()
 		worker = makeWorker(spec, glock.NewRealClock())
 	)
 
@@ -76,9 +77,81 @@ func (s *WorkerSuite) TestInitError(t sweet.T) {
 	Expect(err).To(MatchError("oops"))
 }
 
+func (s *WorkerSuite) TestFinalize(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpecFinalizer()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	err := worker.Init(testConfig)
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(BeNil()))
+	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+}
+
+func (s *WorkerSuite) TestFinalizeError(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpecFinalizer()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	spec.FinalizeFunc.SetDefaultHook(func() error {
+		return fmt.Errorf("oops")
+	})
+
+	err := worker.Init(testConfig)
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(MatchError("oops")))
+	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+}
+
+func (s *WorkerSuite) TestFinalizeErrorDoesNotOverwrite(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpecFinalizer()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		return fmt.Errorf("oops")
+	})
+
+	spec.FinalizeFunc.SetDefaultHook(func() error {
+		return fmt.Errorf("unheard oops")
+	})
+
+	err := worker.Init(testConfig)
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(MatchError("oops")))
+	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+}
+
 func (s *WorkerSuite) TestTickError(t sweet.T) {
 	var (
-		spec    = NewMockWorkerSpec()
+		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
 		worker  = makeWorker(spec, clock)
 		errChan = make(chan error)
@@ -100,7 +173,7 @@ func (s *WorkerSuite) TestTickError(t sweet.T) {
 
 func (s *WorkerSuite) TestTickContext(t sweet.T) {
 	var (
-		spec    = NewMockWorkerSpec()
+		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
 		worker  = makeWorker(spec, clock)
 		errChan = make(chan error)

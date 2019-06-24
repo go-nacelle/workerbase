@@ -7,6 +7,7 @@ import (
 
 	"github.com/efritz/glock"
 	"github.com/go-nacelle/nacelle"
+	"github.com/go-nacelle/process"
 	"github.com/google/uuid"
 )
 
@@ -26,6 +27,11 @@ type (
 	WorkerSpec interface {
 		Init(nacelle.Config) error
 		Tick(ctx context.Context) error
+	}
+
+	workerSpecFinalizer interface {
+		process.Finalizer
+		WorkerSpec
 	}
 )
 
@@ -65,11 +71,20 @@ func (w *Worker) Init(config nacelle.Config) error {
 	return w.spec.Init(config)
 }
 
-func (w *Worker) Start() error {
+func (w *Worker) Start() (err error) {
+	if finalizer, ok := w.spec.(nacelle.Finalizer); ok {
+		defer func() {
+			finalizeErr := finalizer.Finalize()
+			if err == nil {
+				err = finalizeErr
+			}
+		}()
+	}
+
 	defer w.Stop()
 
-	if err := w.Health.RemoveReason(w.healthToken); err != nil {
-		return err
+	if err = w.Health.RemoveReason(w.healthToken); err != nil {
+		return
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -81,19 +96,19 @@ func (w *Worker) Start() error {
 	}()
 
 	for {
-		if err := w.spec.Tick(ctx); err != nil {
-			return err
+		if err = w.spec.Tick(ctx); err != nil {
+			return
 		}
 
 		select {
 		case <-w.halt:
-			return nil
+			return
 		case <-w.clock.After(w.tickInterval):
 		}
 	}
 }
 
-func (w *Worker) Stop() (err error) {
+func (w *Worker) Stop() error {
 	w.once.Do(func() { close(w.halt) })
-	return
+	return nil
 }
