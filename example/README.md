@@ -4,7 +4,7 @@ A trivial example application to showcase the [workerbase](https://github.com/go
 
 ## Overview
 
-This example application uses continuously pings the [MetaWeather API](https://www.metaweather.com/) to get the average temperature for a configurable location. The **main** function boots [nacelle](https://github.com/go-nacelle) with a initializer that creates a weather service and a worker spec for the process provided by this library. The service created by the former is injected into the later.
+This example application uses continuously pings the [MetaWeather API](https://www.metaweather.com/) to get the average temperature for a configurable location. The **main** function boots [nacelle](https://github.com/go-nacelle/nacelle) with a initializer that creates a weather service and a worker spec for the process provided by this library. The service created by the former is injected into the later.
 
 ## Building and Running
 
