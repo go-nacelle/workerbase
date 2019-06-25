@@ -53,6 +53,108 @@ func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 	Eventually(errChan).Should(Receive(BeNil()))
 }
 
+func (s *WorkerSuite) TestNonStrict(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpecFinalizer()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	start := time.Now()
+	clock.SetCurrent(start)
+	times := []time.Time{}
+
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		times = append(times, clock.Now())
+		clock.Advance(time.Second * 30)
+		return nil
+	})
+
+	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+		"worker_tick_interval": "60",
+	})))
+
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	clock.BlockingAdvance(time.Minute)
+	clock.BlockingAdvance(time.Minute)
+	clock.BlockingAdvance(time.Minute)
+	clock.BlockingAdvance(time.Minute)
+	Eventually(times).Should(HaveLen(4))
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(BeNil()))
+	Expect(times[:4]).To(ConsistOf(
+		start,
+		start.Add(time.Minute*1).Add(time.Second*30*1),
+		start.Add(time.Minute*2).Add(time.Second*30*2),
+		start.Add(time.Minute*3).Add(time.Second*30*3),
+	))
+}
+
+func (s *WorkerSuite) TestStrict(t sweet.T) {
+	var (
+		spec    = NewMockWorkerSpecFinalizer()
+		clock   = glock.NewMockClock()
+		worker  = makeWorker(spec, clock)
+		errChan = make(chan error)
+	)
+
+	worker.tickInterval = time.Minute
+	worker.strictClock = true
+
+	start := time.Now()
+	clock.SetCurrent(start)
+	times := []time.Time{}
+	durations := []time.Duration{
+		time.Second * 3,
+		time.Second * 5,
+		time.Second * 12,
+	}
+
+	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		if len(durations) == 0 {
+			<-ctx.Done()
+			return nil
+		}
+
+		times = append(times, clock.Now())
+		d := durations[0]
+		durations = durations[1:]
+		clock.Advance(d)
+		return nil
+	})
+
+	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+		"worker_tick_interval": "60",
+		"worker_strict_clock":  "true",
+	})))
+
+	Expect(err).To(BeNil())
+
+	go func() {
+		errChan <- worker.Start()
+	}()
+
+	clock.BlockingAdvance(time.Second * 57)
+	clock.BlockingAdvance(time.Second * 55)
+	clock.BlockingAdvance(time.Second * 48)
+	Eventually(times).Should(HaveLen(3))
+
+	worker.Stop()
+	Eventually(errChan).Should(Receive(BeNil()))
+	Expect(times[:3]).To(ConsistOf(
+		start,
+		start.Add(time.Minute*1),
+		start.Add(time.Minute*2),
+	))
+}
+
 func (s *WorkerSuite) TestBadInject(t sweet.T) {
 	worker := NewWorker(&badInjectWorkerSpec{})
 	worker.Services = makeBadContainer()

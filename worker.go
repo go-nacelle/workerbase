@@ -21,6 +21,7 @@ type (
 		halt         chan struct{}
 		once         *sync.Once
 		tickInterval time.Duration
+		strictClock  bool
 		healthToken  healthToken
 	}
 
@@ -62,6 +63,7 @@ func (w *Worker) Init(config nacelle.Config) error {
 		return err
 	}
 
+	w.strictClock = workerConfig.StrictClock
 	w.tickInterval = workerConfig.WorkerTickInterval
 
 	if err := w.Services.Inject(w.spec); err != nil {
@@ -96,14 +98,20 @@ func (w *Worker) Start() (err error) {
 	}()
 
 	for {
+		started := w.clock.Now()
 		if err = w.spec.Tick(ctx); err != nil {
 			return
+		}
+
+		interval := w.tickInterval
+		if w.strictClock {
+			interval -= w.clock.Now().Sub(started)
 		}
 
 		select {
 		case <-w.halt:
 			return
-		case <-w.clock.After(w.tickInterval):
+		case <-w.clock.After(interval):
 		}
 	}
 }

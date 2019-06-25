@@ -16,4 +16,5 @@ The default process behavior can be configured by the following environment vari
 
 | Environment Variable | Default | Description |
 | -------------------- | ------- | ----------- |
-| WORKER_TICK_INTERVAL | 0       | The time (in seconds) between calls to teh spec's tick function. |
+| WORKER_STRICT_CLOCK  | false   | Subtract the duration of the previous tick from the time between calls to the spec's tick function. |
+| WORKER_TICK_INTERVAL | 0       | The time (in seconds) between calls to the spec's tick function. |
