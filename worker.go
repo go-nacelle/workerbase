@@ -37,7 +37,7 @@ type (
 )
 
 func NewWorker(spec WorkerSpec, configs ...ConfigFunc) *Worker {
-	return newWorker(spec, glock.NewRealClock())
+	return newWorker(spec, glock.NewRealClock(), configs...)
 }
 
 func newWorker(spec WorkerSpec, clock glock.Clock, configs ...ConfigFunc) *Worker {
