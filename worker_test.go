@@ -183,6 +183,19 @@ func (s *WorkerSuite) TestBadInject(t sweet.T) {
 	Expect(err.Error()).To(ContainSubstring("ServiceA"))
 }
 
+func (s *WorkerSuite) TestTagModifiers(t sweet.T) {
+	worker := NewWorker(NewMockWorkerSpecFinalizer(), WithTagModifiers(nacelle.NewEnvTagPrefixer("prefix")))
+	worker.Services = nacelle.NewServiceContainer()
+	worker.Health = nacelle.NewHealth()
+
+	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+		"prefix_worker_tick_interval": "3600",
+	})))
+
+	Expect(err).To(BeNil())
+	Expect(worker.tickInterval).To(Equal(time.Hour))
+}
+
 func (s *WorkerSuite) TestInitError(t sweet.T) {
 	var (
 		spec   = NewMockWorkerSpecFinalizer()
