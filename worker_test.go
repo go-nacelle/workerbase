@@ -62,10 +62,17 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 		errChan = make(chan error)
 	)
 
-	start := time.Now()
-	clock.SetCurrent(start)
 	times := []time.Time{}
 	mutex := sync.Mutex{}
+
+	lockedLen := func() int {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return len(times)
+	}
+
+	start := time.Now()
+	clock.SetCurrent(start)
 
 	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
 		mutex.Lock()
@@ -90,11 +97,7 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
-	Eventually(func() int {
-		mutex.Lock()
-		defer mutex.Unlock()
-		return len(times)
-	}).Should(Equal(4))
+	Eventually(lockedLen).Should(BeNumerically(">=", 4))
 
 	worker.Stop()
 	Eventually(errChan).Should(Receive(BeNil()))
@@ -117,16 +120,23 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 	worker.tickInterval = time.Minute
 	worker.strictClock = true
 
-	start := time.Now()
-	clock.SetCurrent(start)
 	times := []time.Time{}
 	mutex := sync.Mutex{}
+
+	lockedLen := func() int {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return len(times)
+	}
 
 	durations := []time.Duration{
 		time.Second * 3,
 		time.Second * 5,
 		time.Second * 12,
 	}
+
+	start := time.Now()
+	clock.SetCurrent(start)
 
 	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
 		if len(durations) == 0 {
@@ -158,11 +168,7 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Second * 57)
 	clock.BlockingAdvance(time.Second * 55)
 	clock.BlockingAdvance(time.Second * 48)
-	Eventually(func() int {
-		mutex.Lock()
-		defer mutex.Unlock()
-		return len(times)
-	}).Should(Equal(3))
+	Eventually(lockedLen).Should(Equal(3))
 
 	worker.Stop()
 	Eventually(errChan).Should(Receive(BeNil()))
