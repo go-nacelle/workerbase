@@ -3,6 +3,7 @@ package workerbase
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/aphistic/sweet"
@@ -64,9 +65,13 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 	start := time.Now()
 	clock.SetCurrent(start)
 	times := []time.Time{}
+	mutex := sync.Mutex{}
 
 	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
+		mutex.Lock()
 		times = append(times, clock.Now())
+		mutex.Unlock()
+
 		clock.Advance(time.Second * 30)
 		return nil
 	})
@@ -85,7 +90,11 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
-	Eventually(times).Should(HaveLen(4))
+	Eventually(func() int {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return len(times)
+	}).Should(Equal(4))
 
 	worker.Stop()
 	Eventually(errChan).Should(Receive(BeNil()))
@@ -111,6 +120,8 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 	start := time.Now()
 	clock.SetCurrent(start)
 	times := []time.Time{}
+	mutex := sync.Mutex{}
+
 	durations := []time.Duration{
 		time.Second * 3,
 		time.Second * 5,
@@ -123,7 +134,10 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 			return nil
 		}
 
+		mutex.Lock()
 		times = append(times, clock.Now())
+		mutex.Unlock()
+
 		d := durations[0]
 		durations = durations[1:]
 		clock.Advance(d)
@@ -144,7 +158,11 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Second * 57)
 	clock.BlockingAdvance(time.Second * 55)
 	clock.BlockingAdvance(time.Second * 48)
-	Eventually(times).Should(HaveLen(3))
+	Eventually(func() int {
+		mutex.Lock()
+		defer mutex.Unlock()
+		return len(times)
+	}).Should(Equal(3))
 
 	worker.Stop()
 	Eventually(errChan).Should(Receive(BeNil()))
