@@ -62,8 +62,8 @@ func (s *Spec) Finalize() error {
 The following options can be supplied to the worker process instance on construction.
 
 <dl>
-  <dd>WithTagModifiers</dd>
-  <dt><a href="https://godoc.org/github.com/go-nacelle/workerbase#WithTagModifiers">WithTagModifiers</a> registers the tag modifiers to be used when loading process configuration (see [below](#Configuration)). This can be used to change the default tick interval, or prefix all target environment variables in the case where more than one worker process is registered per application.</dt>
+  <dt>WithTagModifiers</dt>
+  <dd><a href="https://godoc.org/github.com/go-nacelle/workerbase#WithTagModifiers">WithTagModifiers</a> registers the tag modifiers to be used when loading process configuration (see <a href="https://godoc.org/github.com/go-nacelle/workerbase#Configuration">below</a>). This can be used to change the default tick interval, or prefix all target environment variables in the case where more than one worker process is registered per application.</dd>
 </dl>
 
 ### Configuration
