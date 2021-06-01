@@ -3,14 +3,16 @@ package workerbase
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
+	"testing"
 	"time"
 
-	"github.com/aphistic/sweet"
-	"github.com/efritz/glock"
-	. "github.com/efritz/go-mockgen/matchers"
+	"github.com/derision-test/glock"
+	mockassert "github.com/derision-test/go-mockgen/testutil/assert"
 	"github.com/go-nacelle/nacelle"
-	. "github.com/onsi/gomega"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type WorkerSuite struct{}
@@ -19,7 +21,7 @@ var testConfig = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
 	"worker_tick_interval": "5",
 }))
 
-func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
+func TestRunAndStop(t *testing.T) {
 	var (
 		spec     = NewMockWorkerSpecFinalizer()
 		clock    = glock.NewMockClock()
@@ -36,25 +38,26 @@ func (s *WorkerSuite) TestRunAndStop(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
-	Eventually(tickChan).Should(Receive())
-	Consistently(tickChan).ShouldNot(Receive())
+	eventually(t, receiveStruct(tickChan))
+	assertStructChanDoesNotReceive(t, tickChan)
 	clock.BlockingAdvance(time.Second * 5)
-	Eventually(tickChan).Should(Receive())
-	Consistently(tickChan).ShouldNot(Receive())
+	eventually(t, receiveStruct(tickChan))
+	assertStructChanDoesNotReceive(t, tickChan)
 	clock.BlockingAdvance(time.Second * 5)
-	Eventually(tickChan).Should(Receive())
+	eventually(t, receiveStruct(tickChan))
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(BeNil()))
+	value := readErrorValue(t, errChan)
+	assert.Nil(t, value)
 }
 
-func (s *WorkerSuite) TestNonStrict(t sweet.T) {
+func TestNonStrict(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -87,7 +90,7 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 		"worker_tick_interval": "60",
 	})))
 
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
@@ -97,19 +100,26 @@ func (s *WorkerSuite) TestNonStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
 	clock.BlockingAdvance(time.Minute)
-	Eventually(lockedLen).Should(BeNumerically(">=", 4))
+	eventually(t, func() bool { return lockedLen() >= 4 })
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(BeNil()))
-	Expect(times[:4]).To(ConsistOf(
+	value := readErrorValue(t, errChan)
+	assert.Nil(t, value)
+
+	sort.Slice(times[:4], func(i, j int) bool {
+		return times[i].Before(times[j])
+	})
+
+	expected := []time.Time{
 		start,
-		start.Add(time.Minute*1).Add(time.Second*30*1),
-		start.Add(time.Minute*2).Add(time.Second*30*2),
-		start.Add(time.Minute*3).Add(time.Second*30*3),
-	))
+		start.Add(time.Minute * 1).Add(time.Second * 30 * 1),
+		start.Add(time.Minute * 2).Add(time.Second * 30 * 2),
+		start.Add(time.Minute * 3).Add(time.Second * 30 * 3),
+	}
+	require.Equal(t, expected, times[:4])
 }
 
-func (s *WorkerSuite) TestStrict(t sweet.T) {
+func TestStrict(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -159,7 +169,7 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 		"worker_strict_clock":  "true",
 	})))
 
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
@@ -168,28 +178,35 @@ func (s *WorkerSuite) TestStrict(t sweet.T) {
 	clock.BlockingAdvance(time.Second * 57)
 	clock.BlockingAdvance(time.Second * 55)
 	clock.BlockingAdvance(time.Second * 48)
-	Eventually(lockedLen).Should(Equal(3))
+	eventually(t, func() bool { return lockedLen() == 3 })
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(BeNil()))
-	Expect(times[:3]).To(ConsistOf(
+	value := readErrorValue(t, errChan)
+	assert.Nil(t, value)
+
+	sort.Slice(times[:3], func(i, j int) bool {
+		return times[i].Before(times[j])
+	})
+
+	expected := []time.Time{
 		start,
-		start.Add(time.Minute*1),
-		start.Add(time.Minute*2),
-	))
+		start.Add(time.Minute * 1),
+		start.Add(time.Minute * 2),
+	}
+	assert.Equal(t, expected, times[:3])
 }
 
-func (s *WorkerSuite) TestBadInject(t sweet.T) {
+func TestBadInject(t *testing.T) {
 	worker := NewWorker(&badInjectWorkerSpec{})
 	worker.Services = makeBadContainer()
 	worker.Health = nacelle.NewHealth()
 
 	err := worker.Init(testConfig)
-	Expect(err).NotTo(BeNil())
-	Expect(err.Error()).To(ContainSubstring("ServiceA"))
+	assert.NotNil(t, err)
+	assert.Contains(t, err.Error(), "ServiceA")
 }
 
-func (s *WorkerSuite) TestTagModifiers(t sweet.T) {
+func TestTagModifiers(t *testing.T) {
 	worker := NewWorker(NewMockWorkerSpecFinalizer(), WithTagModifiers(nacelle.NewEnvTagPrefixer("prefix")))
 	worker.Services = nacelle.NewServiceContainer()
 	worker.Health = nacelle.NewHealth()
@@ -198,11 +215,11 @@ func (s *WorkerSuite) TestTagModifiers(t sweet.T) {
 		"prefix_worker_tick_interval": "3600",
 	})))
 
-	Expect(err).To(BeNil())
-	Expect(worker.tickInterval).To(Equal(time.Hour))
+	assert.Nil(t, err)
+	assert.Equal(t, time.Hour, worker.tickInterval)
 }
 
-func (s *WorkerSuite) TestInitError(t sweet.T) {
+func TestInitError(t *testing.T) {
 	var (
 		spec   = NewMockWorkerSpecFinalizer()
 		worker = makeWorker(spec, glock.NewRealClock())
@@ -213,10 +230,10 @@ func (s *WorkerSuite) TestInitError(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(MatchError("oops"))
+	assert.EqualError(t, err, "oops")
 }
 
-func (s *WorkerSuite) TestFinalize(t sweet.T) {
+func TestFinalize(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -225,18 +242,19 @@ func (s *WorkerSuite) TestFinalize(t sweet.T) {
 	)
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(BeNil()))
-	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+	value := readErrorValue(t, errChan)
+	assert.Nil(t, value)
+	mockassert.CalledOnce(t, spec.FinalizeFunc)
 }
 
-func (s *WorkerSuite) TestFinalizeError(t sweet.T) {
+func TestFinalizeError(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -249,18 +267,19 @@ func (s *WorkerSuite) TestFinalizeError(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(MatchError("oops")))
-	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+	value := readErrorValue(t, errChan)
+	assert.EqualError(t, value, "oops")
+	mockassert.CalledOnce(t, spec.FinalizeFunc)
 }
 
-func (s *WorkerSuite) TestFinalizeErrorDoesNotOverwrite(t sweet.T) {
+func TestFinalizeErrorDoesNotOverwrite(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -277,18 +296,19 @@ func (s *WorkerSuite) TestFinalizeErrorDoesNotOverwrite(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(MatchError("oops")))
-	Expect(spec.FinalizeFunc).To(BeCalledOnce())
+	value := readErrorValue(t, errChan)
+	assert.EqualError(t, value, "oops")
+	mockassert.CalledOnce(t, spec.FinalizeFunc)
 }
 
-func (s *WorkerSuite) TestTickError(t sweet.T) {
+func TestTickError(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -301,16 +321,17 @@ func (s *WorkerSuite) TestTickError(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
-	Eventually(errChan).Should(Receive(MatchError("oops")))
+	value := readErrorValue(t, errChan)
+	assert.EqualError(t, value, "oops")
 }
 
-func (s *WorkerSuite) TestTickContext(t sweet.T) {
+func TestTickContext(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
@@ -324,14 +345,15 @@ func (s *WorkerSuite) TestTickContext(t sweet.T) {
 	})
 
 	err := worker.Init(testConfig)
-	Expect(err).To(BeNil())
+	assert.Nil(t, err)
 
 	go func() {
 		errChan <- worker.Start()
 	}()
 
 	worker.Stop()
-	Eventually(errChan).Should(Receive(BeNil()))
+	value := readErrorValue(t, errChan)
+	assert.Nil(t, value)
 }
 
 func makeWorker(spec WorkerSpec, clock glock.Clock) *Worker {
