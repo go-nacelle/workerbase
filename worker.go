@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/efritz/glock"
+	"github.com/derision-test/glock"
 	"github.com/go-nacelle/nacelle"
 	"github.com/go-nacelle/process"
 	"github.com/google/uuid"
