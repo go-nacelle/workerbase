@@ -5,36 +5,33 @@ import (
 	"sync"
 	"time"
 
-	"github.com/efritz/glock"
+	"github.com/derision-test/glock"
 	"github.com/go-nacelle/nacelle"
-	"github.com/go-nacelle/process"
 	"github.com/google/uuid"
 )
 
-type (
-	Worker struct {
-		Services     nacelle.ServiceContainer `service:"services"`
-		Health       nacelle.Health           `service:"health"`
-		tagModifiers []nacelle.TagModifier
-		spec         WorkerSpec
-		clock        glock.Clock
-		halt         chan struct{}
-		once         *sync.Once
-		tickInterval time.Duration
-		strictClock  bool
-		healthToken  healthToken
-	}
+type Worker struct {
+	Services     nacelle.ServiceContainer `service:"services"`
+	Health       nacelle.Health           `service:"health"`
+	tagModifiers []nacelle.TagModifier
+	spec         WorkerSpec
+	clock        glock.Clock
+	halt         chan struct{}
+	once         *sync.Once
+	tickInterval time.Duration
+	strictClock  bool
+	healthToken  healthToken
+}
 
-	WorkerSpec interface {
-		Init(nacelle.Config) error
-		Tick(ctx context.Context) error
-	}
+type WorkerSpec interface {
+	Init(nacelle.Config) error
+	Tick(ctx context.Context) error
+}
 
-	workerSpecFinalizer interface {
-		process.Finalizer
-		WorkerSpec
-	}
-)
+type workerSpecFinalizer interface {
+	nacelle.Finalizer
+	WorkerSpec
+}
 
 func NewWorker(spec WorkerSpec, configs ...ConfigFunc) *Worker {
 	return newWorker(spec, glock.NewRealClock(), configs...)
