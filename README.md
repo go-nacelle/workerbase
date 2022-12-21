@@ -1,4 +1,8 @@
-# Nacelle Base Worker Process [![GoDoc](https://godoc.org/github.com/go-nacelle/workerbase?status.svg)](https://godoc.org/github.com/go-nacelle/workerbase) [![CircleCI](https://circleci.com/gh/go-nacelle/workerbase.svg?style=svg)](https://circleci.com/gh/go-nacelle/workerbase) [![Coverage Status](https://coveralls.io/repos/github/go-nacelle/workerbase/badge.svg?branch=master)](https://coveralls.io/github/go-nacelle/workerbase?branch=master)
+# Nacelle Base Worker Process
+
+[![PkgGoDev](https://pkg.go.dev/badge/badge/github.com/go-nacelle/workerbase.svg)](https://pkg.go.dev/github.com/go-nacelle/workerbase)
+[![Build status](https://github.com/go-nacelle/workerbase/actions/workflows/test.yml/badge.svg)](https://github.com/go-nacelle/workerbase/actions/workflows/test.yml)
+[![Latest release](https://img.shields.io/github/release/go-nacelle/workerbase.svg)](https://github.com/go-nacelle/workerbase/releases/)
 
 Abstract worker process for nacelle.
 
