@@ -10,7 +10,7 @@ import (
 
 	"github.com/derision-test/glock"
 	mockassert "github.com/derision-test/go-mockgen/testutil/assert"
-	"github.com/go-nacelle/nacelle"
+	"github.com/go-nacelle/nacelle/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -36,12 +36,14 @@ func TestRunAndStop(t *testing.T) {
 		tickChan <- struct{}{}
 		return nil
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
 	eventually(t, receiveStruct(tickChan))
@@ -52,7 +54,7 @@ func TestRunAndStop(t *testing.T) {
 	clock.BlockingAdvance(time.Second * 5)
 	eventually(t, receiveStruct(tickChan))
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.Nil(t, value)
 }
@@ -85,15 +87,17 @@ func TestNonStrict(t *testing.T) {
 		clock.Advance(time.Second * 30)
 		return nil
 	})
-
-	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
 		"worker_tick_interval": "60",
-	})))
+	}))
+
+	ctx := context.Background()
+	err := worker.Init(ctx)
 
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
 	clock.BlockingAdvance(time.Minute)
@@ -102,7 +106,7 @@ func TestNonStrict(t *testing.T) {
 	clock.BlockingAdvance(time.Minute)
 	eventually(t, func() bool { return lockedLen() >= 4 })
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.Nil(t, value)
 
@@ -163,16 +167,18 @@ func TestStrict(t *testing.T) {
 		clock.Advance(d)
 		return nil
 	})
-
-	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
 		"worker_tick_interval": "60",
 		"worker_strict_clock":  "true",
-	})))
+	}))
+
+	ctx := context.Background()
+	err := worker.Init(ctx)
 
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
 	clock.BlockingAdvance(time.Second * 57)
@@ -180,7 +186,7 @@ func TestStrict(t *testing.T) {
 	clock.BlockingAdvance(time.Second * 48)
 	eventually(t, func() bool { return lockedLen() == 3 })
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.Nil(t, value)
 
@@ -200,8 +206,10 @@ func TestBadInject(t *testing.T) {
 	worker := NewWorker(&badInjectWorkerSpec{})
 	worker.Services = makeBadContainer()
 	worker.Health = nacelle.NewHealth()
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "ServiceA")
 }
@@ -210,10 +218,12 @@ func TestTagModifiers(t *testing.T) {
 	worker := NewWorker(NewMockWorkerSpecFinalizer(), WithTagModifiers(nacelle.NewEnvTagPrefixer("prefix")))
 	worker.Services = nacelle.NewServiceContainer()
 	worker.Health = nacelle.NewHealth()
-
-	err := worker.Init(nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
 		"prefix_worker_tick_interval": "3600",
-	})))
+	}))
+
+	ctx := context.Background()
+	err := worker.Init(ctx)
 
 	assert.Nil(t, err)
 	assert.Equal(t, time.Hour, worker.tickInterval)
@@ -225,11 +235,13 @@ func TestInitError(t *testing.T) {
 		worker = makeWorker(spec, glock.NewRealClock())
 	)
 
-	spec.InitFunc.SetDefaultHook(func(config nacelle.Config) error {
+	spec.InitFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.EqualError(t, err, "oops")
 }
 
@@ -240,15 +252,17 @@ func TestFinalize(t *testing.T) {
 		worker  = makeWorker(spec, clock)
 		errChan = make(chan error)
 	)
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.Nil(t, value)
 	mockassert.CalledOnce(t, spec.FinalizeFunc)
@@ -262,18 +276,20 @@ func TestFinalizeError(t *testing.T) {
 		errChan = make(chan error)
 	)
 
-	spec.FinalizeFunc.SetDefaultHook(func() error {
+	spec.FinalizeFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.EqualError(t, value, "oops")
 	mockassert.CalledOnce(t, spec.FinalizeFunc)
@@ -291,18 +307,20 @@ func TestFinalizeErrorDoesNotOverwrite(t *testing.T) {
 		return fmt.Errorf("oops")
 	})
 
-	spec.FinalizeFunc.SetDefaultHook(func() error {
+	spec.FinalizeFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("unheard oops")
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.EqualError(t, value, "oops")
 	mockassert.CalledOnce(t, spec.FinalizeFunc)
@@ -319,12 +337,14 @@ func TestTickError(t *testing.T) {
 	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
 	value := readErrorValue(t, errChan)
@@ -343,15 +363,17 @@ func TestTickContext(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	})
+	worker.Config = testConfig
 
-	err := worker.Init(testConfig)
+	ctx := context.Background()
+	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
 	go func() {
-		errChan <- worker.Start()
+		errChan <- worker.Start(ctx)
 	}()
 
-	worker.Stop()
+	worker.Stop(ctx)
 	value := readErrorValue(t, errChan)
 	assert.Nil(t, value)
 }
@@ -373,10 +395,10 @@ type badInjectWorkerSpec struct {
 	ServiceA *A `service:"A"`
 }
 
-func (s *badInjectWorkerSpec) Init(c nacelle.Config) error    { return nil }
+func (s *badInjectWorkerSpec) Init(ctx context.Context) error { return nil }
 func (s *badInjectWorkerSpec) Tick(ctx context.Context) error { return nil }
 
-func makeBadContainer() nacelle.ServiceContainer {
+func makeBadContainer() *nacelle.ServiceContainer {
 	container := nacelle.NewServiceContainer()
 	container.Set("A", &B{})
 	return container

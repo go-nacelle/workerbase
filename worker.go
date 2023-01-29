@@ -6,27 +6,31 @@ import (
 	"time"
 
 	"github.com/derision-test/glock"
-	"github.com/go-nacelle/nacelle"
-	"github.com/go-nacelle/process"
+	"github.com/go-nacelle/nacelle/v2"
+	"github.com/go-nacelle/process/v2"
+	"github.com/go-nacelle/service/v2"
 	"github.com/google/uuid"
 )
 
 type (
 	Worker struct {
-		Services     nacelle.ServiceContainer `service:"services"`
-		Health       nacelle.Health           `service:"health"`
+		Config       *nacelle.Config           `service:"config"`
+		Services     *nacelle.ServiceContainer `service:"services"`
+		Health       *nacelle.Health           `service:"health"`
 		tagModifiers []nacelle.TagModifier
 		spec         WorkerSpec
 		clock        glock.Clock
 		halt         chan struct{}
+		done         chan struct{}
 		once         *sync.Once
 		tickInterval time.Duration
 		strictClock  bool
 		healthToken  healthToken
+		healthStatus *process.HealthComponentStatus
 	}
 
 	WorkerSpec interface {
-		Init(nacelle.Config) error
+		Init(ctx context.Context) error
 		Tick(ctx context.Context) error
 	}
 
@@ -48,46 +52,48 @@ func newWorker(spec WorkerSpec, clock glock.Clock, configs ...ConfigFunc) *Worke
 		spec:         spec,
 		clock:        clock,
 		halt:         make(chan struct{}),
+		done:         make(chan struct{}),
 		once:         &sync.Once{},
 		healthToken:  healthToken(uuid.New().String()),
 	}
 }
 
-func (w *Worker) Init(config nacelle.Config) error {
-	if err := w.Health.AddReason(w.healthToken); err != nil {
+func (w *Worker) Init(ctx context.Context) error {
+	healthStatus, err := w.Health.Register(w.healthToken)
+	if err != nil {
 		return err
 	}
+	w.healthStatus = healthStatus
 
 	workerConfig := &Config{}
-	if err := config.Load(workerConfig, w.tagModifiers...); err != nil {
+	if err := w.Config.Load(workerConfig, w.tagModifiers...); err != nil {
 		return err
 	}
 
 	w.strictClock = workerConfig.StrictClock
 	w.tickInterval = workerConfig.WorkerTickInterval
 
-	if err := w.Services.Inject(w.spec); err != nil {
+	if err := service.Inject(ctx, w.Services, w.spec); err != nil {
 		return err
 	}
 
-	return w.spec.Init(config)
+	return w.spec.Init(ctx)
 }
 
-func (w *Worker) Start() (err error) {
+func (w *Worker) Start(ctx context.Context) (err error) {
 	if finalizer, ok := w.spec.(nacelle.Finalizer); ok {
 		defer func() {
-			finalizeErr := finalizer.Finalize()
+			finalizeErr := finalizer.Finalize(ctx)
 			if err == nil {
 				err = finalizeErr
 			}
 		}()
 	}
 
-	defer w.Stop()
+	defer w.Stop(ctx)
 
-	if err = w.Health.RemoveReason(w.healthToken); err != nil {
-		return
-	}
+	w.healthStatus.Update(true)
+	defer close(w.done)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -116,7 +122,8 @@ func (w *Worker) Start() (err error) {
 	}
 }
 
-func (w *Worker) Stop() error {
+func (w *Worker) Stop(ctx context.Context) error {
 	w.once.Do(func() { close(w.halt) })
+	<-w.done
 	return nil
 }
