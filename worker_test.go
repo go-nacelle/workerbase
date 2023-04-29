@@ -229,6 +229,26 @@ func TestTagModifiers(t *testing.T) {
 	assert.Equal(t, time.Hour, worker.tickInterval)
 }
 
+func TestInitConfig(t *testing.T) {
+	var (
+		spec   = NewMockWorkerSpecFinalizer()
+		clock  = glock.NewMockClock()
+		worker = makeWorker(spec, clock)
+	)
+
+	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+		"worker_tick_interval": "60",
+		"worker_strict_clock":  "true",
+	}))
+
+	ctx := context.Background()
+	err := worker.Init(ctx)
+	require.Nil(t, err)
+
+	assert.True(t, worker.strictClock)
+	assert.Equal(t, 60*time.Second, worker.tickInterval)
+}
+
 func TestInitError(t *testing.T) {
 	var (
 		spec   = NewMockWorkerSpecFinalizer()
