@@ -1,6 +1,6 @@
 package workerbase
 
-import "github.com/go-nacelle/config"
+import "github.com/go-nacelle/config/v3"
 
 type (
 	options struct {
