@@ -80,7 +80,7 @@ func (w *Worker) Init(ctx context.Context) error {
 	return w.spec.Init(ctx)
 }
 
-func (w *Worker) Start(ctx context.Context) (err error) {
+func (w *Worker) Run(ctx context.Context) (err error) {
 	if finalizer, ok := w.spec.(nacelle.Finalizer); ok {
 		defer func() {
 			finalizeErr := finalizer.Finalize(ctx)
