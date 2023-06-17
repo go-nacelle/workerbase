@@ -10,7 +10,10 @@ import (
 
 	"github.com/derision-test/glock"
 	mockassert "github.com/derision-test/go-mockgen/testutil/assert"
+	"github.com/go-nacelle/config/v3"
 	"github.com/go-nacelle/nacelle/v2"
+	"github.com/go-nacelle/process/v2"
+	"github.com/go-nacelle/service/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +28,7 @@ func TestRunAndStop(t *testing.T) {
 	var (
 		spec     = NewMockWorkerSpecFinalizer()
 		clock    = glock.NewMockClock()
-		worker   = makeWorker(spec, clock)
+		worker   = newWorker(spec, clock)
 		tickChan = make(chan struct{})
 		errChan  = make(chan error)
 	)
@@ -36,9 +39,10 @@ func TestRunAndStop(t *testing.T) {
 		tickChan <- struct{}{}
 		return nil
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -63,7 +67,7 @@ func TestNonStrict(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
@@ -87,11 +91,14 @@ func TestNonStrict(t *testing.T) {
 		clock.Advance(time.Second * 30)
 		return nil
 	})
-	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
-		"worker_tick_interval": "60",
-	}))
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx,
+		nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+			"worker_tick_interval": "60",
+		})),
+	)
+
 	err := worker.Init(ctx)
 
 	assert.Nil(t, err)
@@ -127,7 +134,7 @@ func TestStrict(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
@@ -167,14 +174,16 @@ func TestStrict(t *testing.T) {
 		clock.Advance(d)
 		return nil
 	})
-	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
-		"worker_tick_interval": "60",
-		"worker_strict_clock":  "true",
-	}))
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx,
+		nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+			"worker_tick_interval": "60",
+			"worker_strict_clock":  "true",
+		})),
+	)
+
 	err := worker.Init(ctx)
-
 	assert.Nil(t, err)
 
 	go func() {
@@ -204,11 +213,12 @@ func TestStrict(t *testing.T) {
 
 func TestBadInject(t *testing.T) {
 	worker := NewWorker(&badInjectWorkerSpec{})
-	worker.Services = makeBadContainer()
-	worker.Health = nacelle.NewHealth()
-	worker.Config = testConfig
 
 	ctx := context.Background()
+	ctx = service.WithContainer(ctx, makeBadContainer())
+	ctx = process.ContextWithHealth(ctx, nacelle.NewHealth())
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.NotNil(t, err)
 	assert.Contains(t, err.Error(), "ServiceA")
@@ -216,15 +226,17 @@ func TestBadInject(t *testing.T) {
 
 func TestTagModifiers(t *testing.T) {
 	worker := NewWorker(NewMockWorkerSpecFinalizer(), WithTagModifiers(nacelle.NewEnvTagPrefixer("prefix")))
-	worker.Services = nacelle.NewServiceContainer()
-	worker.Health = nacelle.NewHealth()
-	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
-		"prefix_worker_tick_interval": "3600",
-	}))
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = service.WithContainer(ctx, nacelle.NewServiceContainer())
+	ctx = process.ContextWithHealth(ctx, nacelle.NewHealth())
+	ctx = config.WithConfig(ctx,
+		nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+			"prefix_worker_tick_interval": "3600",
+		})),
+	)
+
 	err := worker.Init(ctx)
-
 	assert.Nil(t, err)
 	assert.Equal(t, time.Hour, worker.tickInterval)
 }
@@ -233,15 +245,17 @@ func TestInitConfig(t *testing.T) {
 	var (
 		spec   = NewMockWorkerSpecFinalizer()
 		clock  = glock.NewMockClock()
-		worker = makeWorker(spec, clock)
+		worker = newWorker(spec, clock)
 	)
 
-	worker.Config = nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
-		"worker_tick_interval": "60",
-		"worker_strict_clock":  "true",
-	}))
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx,
+		nacelle.NewConfig(nacelle.NewTestEnvSourcer(map[string]string{
+			"worker_tick_interval": "60",
+			"worker_strict_clock":  "true",
+		})),
+	)
 
-	ctx := context.Background()
 	err := worker.Init(ctx)
 	require.Nil(t, err)
 
@@ -252,15 +266,16 @@ func TestInitConfig(t *testing.T) {
 func TestInitError(t *testing.T) {
 	var (
 		spec   = NewMockWorkerSpecFinalizer()
-		worker = makeWorker(spec, glock.NewRealClock())
+		worker = newWorker(spec, glock.NewRealClock())
 	)
 
 	spec.InitFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.EqualError(t, err, "oops")
 }
@@ -269,12 +284,13 @@ func TestFinalize(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -292,16 +308,17 @@ func TestFinalizeError(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
 	spec.FinalizeFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -319,7 +336,7 @@ func TestFinalizeErrorDoesNotOverwrite(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
@@ -330,9 +347,10 @@ func TestFinalizeErrorDoesNotOverwrite(t *testing.T) {
 	spec.FinalizeFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("unheard oops")
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -350,16 +368,17 @@ func TestTickError(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
 	spec.TickFunc.SetDefaultHook(func(ctx context.Context) error {
 		return fmt.Errorf("oops")
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -375,7 +394,7 @@ func TestTickContext(t *testing.T) {
 	var (
 		spec    = NewMockWorkerSpecFinalizer()
 		clock   = glock.NewMockClock()
-		worker  = makeWorker(spec, clock)
+		worker  = newWorker(spec, clock)
 		errChan = make(chan error)
 	)
 
@@ -383,9 +402,10 @@ func TestTickContext(t *testing.T) {
 		<-ctx.Done()
 		return nil
 	})
-	worker.Config = testConfig
 
-	ctx := context.Background()
+	ctx := newTestContext()
+	ctx = config.WithConfig(ctx, testConfig)
+
 	err := worker.Init(ctx)
 	assert.Nil(t, err)
 
@@ -398,11 +418,11 @@ func TestTickContext(t *testing.T) {
 	assert.Nil(t, value)
 }
 
-func makeWorker(spec WorkerSpec, clock glock.Clock) *Worker {
-	worker := newWorker(spec, clock)
-	worker.Services = nacelle.NewServiceContainer()
-	worker.Health = nacelle.NewHealth()
-	return worker
+func newTestContext() context.Context {
+	ctx := context.Background()
+	ctx = process.ContextWithHealth(ctx, process.NewHealth())
+
+	return ctx
 }
 
 //

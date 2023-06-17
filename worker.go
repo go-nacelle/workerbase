@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/derision-test/glock"
+	"github.com/go-nacelle/config/v3"
 	"github.com/go-nacelle/nacelle/v2"
 	"github.com/go-nacelle/process/v2"
 	"github.com/go-nacelle/service/v2"
@@ -14,9 +15,6 @@ import (
 
 type (
 	Worker struct {
-		Config       *nacelle.Config           `service:"config"`
-		Services     *nacelle.ServiceContainer `service:"services"`
-		Health       *nacelle.Health           `service:"health"`
 		tagModifiers []nacelle.TagModifier
 		spec         WorkerSpec
 		clock        glock.Clock
@@ -59,21 +57,23 @@ func newWorker(spec WorkerSpec, clock glock.Clock, configs ...ConfigFunc) *Worke
 }
 
 func (w *Worker) Init(ctx context.Context) error {
-	healthStatus, err := w.Health.Register(w.healthToken)
+	health := process.HealthFromContext(ctx)
+	healthStatus, err := health.Register(w.healthToken)
 	if err != nil {
 		return err
 	}
 	w.healthStatus = healthStatus
 
 	workerConfig := &Config{}
-	if err := w.Config.Load(workerConfig, w.tagModifiers...); err != nil {
+	if err := config.LoadFromContext(ctx, workerConfig, w.tagModifiers...); err != nil {
 		return err
 	}
 
 	w.strictClock = workerConfig.StrictClock
 	w.tickInterval = workerConfig.WorkerTickInterval
 
-	if err := service.Inject(ctx, w.Services, w.spec); err != nil {
+	svc := service.FromContext(ctx)
+	if err := service.Inject(ctx, svc, w.spec); err != nil {
 		return err
 	}
 
